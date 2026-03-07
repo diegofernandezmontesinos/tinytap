@@ -1,28 +1,69 @@
 # TinyTap Backend
 
-Mini app educativa inspirada en Duolingo para niños (~2 años). Este repositorio contiene el backend del proyecto.
+Mini app educativa inspirada en Duolingo para niños (~2 años).
+Backend completo construido con:
 
-## Stack
-
-* Python
+* Python 3.10+
 * FastAPI
-* MongoDB
+* MongoDB (async con Motor)
 * Docker
-* Motor (driver async para Mongo)
-
-## Objetivo MVP
-
-1. Backend que almacene:
-
-   * score
-   * XP
-   * respuestas correctas
-2. API simple para el frontend
-3. Base de datos MongoDB
+* Pydantic
+* Uvicorn
+* VS Code Mongo Extension
 
 ---
 
-# 1. Crear proyecto
+# 🎯 Objetivo MVP
+
+El backend debe permitir:
+
+* Guardar resultados de ejercicios
+* Calcular progreso automáticamente
+* Gestionar ejercicios
+* Entregar ejercicios al frontend
+* Sistema de streaks
+* Analítica básica
+
+Si esto funciona, el frontend puede construirse sin bloqueos.
+
+---
+
+# 🏗 Arquitectura Actual
+
+```
+backend
+│
+├── .env
+├── docker-compose.yml
+├── requirements.txt
+│
+└── app
+    ├── main.py
+    ├── core
+    │   └── config.py
+    ├── db
+    │   └── mongo.py
+    ├── schemas
+    │   └── exercise.py
+    ├── services
+    │   ├── exercise_service.py
+    │   └── progress_service.py
+    └── routes
+        ├── exercise_routes.py
+        └── progress_routes.py
+```
+
+Arquitectura basada en separación de responsabilidades:
+
+* routes → endpoints API
+* services → lógica de negocio
+* schemas → validación
+* db → conexión Mongo
+* core → configuración
+
+---
+
+# 🚀 1. Crear Proyecto
 
 ```bash
 mkdir tinytap
@@ -31,33 +72,30 @@ mkdir backend
 cd backend
 ```
 
+Motivo: separar backend y frontend desde el inicio.
+
 ---
 
-# 2. Crear entorno virtual
+# 🔐 2. Entorno Virtual
 
 ```bash
 python3 -m venv venv
-```
-
-Activar:
-
-```bash
 source venv/bin/activate
 ```
 
-Motivo:
+¿Por qué?
 
-El entorno virtual aísla las dependencias del proyecto para evitar conflictos con otros proyectos de Python.
+Aísla dependencias del proyecto y evita conflictos globales.
 
 ---
 
-# 3. Inicializar git
+# 🧱 3. Git
 
 ```bash
 git init
 ```
 
-Crear `.gitignore`:
+`.gitignore` recomendado:
 
 ```
 venv/
@@ -68,9 +106,9 @@ __pycache__/
 
 ---
 
-# 4. MongoDB con Docker
+# 🐳 4. MongoDB con Docker
 
-Crear `docker-compose.yml` en la raíz del proyecto:
+`docker-compose.yml`
 
 ```yaml
 services:
@@ -86,130 +124,306 @@ volumes:
   mongo_data:
 ```
 
-Levantar contenedor:
+Levantar:
 
 ```bash
 docker compose up -d
-```
-
-Ver contenedores:
-
-```bash
 docker ps
 ```
 
-Motivo:
-
-Docker nos permite ejecutar MongoDB sin instalarlo directamente en el sistema.
+Motivo: ejecutar Mongo sin instalarlo manualmente y con persistencia.
 
 ---
 
-# 5. Probar conexión Mongo con Python
+# 🗄 5. Configuración .env
 
-Instalar driver:
-
-```bash
-pip install pymongo
+```
+MONGO_URL=mongodb://localhost:27017
+DB_NAME=tinytap
 ```
 
-Archivo `test_mongo.py`:
+`app/core/config.py`
 
 ```python
-from pymongo import MongoClient
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-client = MongoClient("mongodb://localhost:27017")
+class Settings(BaseSettings):
+    MONGO_URL: str
+    DB_NAME: str
 
-db = client["tinytap"]
-collection = db["test"]
+    model_config = SettingsConfigDict(
+        env_file = ".env",
+        env_file_encoding = "utf-8"
+    )
 
-result = collection.insert_one({"message": "Mongo connected successfully 🚀"})
-
-print("Inserted document id:", result.inserted_id)
-
-for doc in collection.find():
-    print(doc)
+settings = Settings()
 ```
 
-Ejecutar:
-
-```bash
-python3 test_mongo.py
-```
-
-Motivo:
-
-Confirmar que Python puede comunicarse correctamente con MongoDB.
+Motivo: separar configuración sensible y facilitar despliegue.
 
 ---
 
-# 6. Instalar FastAPI
+# 🔌 6. Conexión Mongo Async
 
-```bash
-pip install fastapi uvicorn
+`app/db/mongo.py`
+
+```python
+from motor.motor_asyncio import AsyncIOMotorClient
+from app.core.config import settings
+
+client: AsyncIOMotorClient = None
+mdb = None
+
+async def connect_to_mongo():
+    global client, mdb
+    client = AsyncIOMotorClient(settings.MONGO_URL)
+    mdb = client[settings.DB_NAME]
+    print("✅ Connected to MongoDB")
+
+async def close_mongo_connection():
+    global client
+    if client:
+        client.close()
+        print("❌ MongoDB connection closed")
 ```
 
-Motivo:
-
-* FastAPI: framework web para construir APIs
-* Uvicorn: servidor ASGI que ejecuta FastAPI
-
-Arquitectura:
-
-Client -> Uvicorn -> FastAPI -> MongoDB
+Importante: usar `mdb` para evitar problemas de referencia.
 
 ---
 
-# 7. Crear API básica
+# 📦 7. Sistema de Ejercicios
 
-Archivo `main.py`:
+## Schema
+
+`app/schemas/exercise.py`
+
+```python
+from pydantic import BaseModel
+
+class ExerciseResult(BaseModel):
+    user_id: str
+    exercise_id: str
+    correct: bool
+    response_time_ms: int
+```
+
+Validación automática de requests.
+
+---
+
+## Service
+
+`app/services/exercise_service.py`
+
+```python
+from datetime import datetime
+from app.db import mongo
+
+async def save_exercise_result(data):
+
+    xp = 10 if data.correct else 0
+
+    document = {
+        "user_id": data.user_id,
+        "exercise_id": data.exercise_id,
+        "correct": data.correct,
+        "xp": xp,
+        "response_time_ms": data.response_time_ms,
+        "timestamp": datetime.utcnow()
+    }
+
+    result = await mongo.mdb.exercise_results.insert_one(document)
+
+    return {
+        "status": "saved",
+        "xp": xp,
+        "id": str(result.inserted_id)
+    }
+```
+
+Motivo: lógica de negocio separada del endpoint.
+
+---
+
+## Route
+
+`app/routes/exercise_routes.py`
+
+```python
+from fastapi import APIRouter
+from app.schemas.exercise import ExerciseResult
+from app.services.exercise_service import save_exercise_result
+
+router = APIRouter()
+
+@router.post("/exercise/result")
+async def save_result(data: ExerciseResult):
+    return await save_exercise_result(data)
+```
+
+---
+
+# 📊 8. Progreso del Usuario (Aggregation Pipeline)
+
+## Service
+
+`app/services/progress_service.py`
+
+```python
+from app.db import mongo
+
+async def get_user_progress(user_id: str):
+
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {
+            "$group": {
+                "_id": "$user_id",
+                "exercises_done": {"$sum": 1},
+                "total_xp": {"$sum": "$xp"},
+                "correct_answers": {
+                    "$sum": {"$cond": ["$correct", 1, 0]}
+                },
+                "avg_response_time": {"$avg": "$response_time_ms"}
+            }
+        }
+    ]
+
+    result = await mongo.mdb.exercise_results.aggregate(pipeline).to_list(1)
+
+    if not result:
+        return {
+            "user_id": user_id,
+            "exercises_done": 0,
+            "total_xp": 0,
+            "accuracy": 0,
+            "avg_response_time": 0
+        }
+
+    data = result[0]
+
+    accuracy = data["correct_answers"] / data["exercises_done"]
+
+    return {
+        "user_id": user_id,
+        "exercises_done": data["exercises_done"],
+        "total_xp": data["total_xp"],
+        "accuracy": accuracy,
+        "avg_response_time": data["avg_response_time"]
+    }
+```
+
+---
+
+## Route
+
+`app/routes/progress_routes.py`
+
+```python
+from fastapi import APIRouter
+from app.services.progress_service import get_user_progress
+
+router = APIRouter()
+
+@router.get("/user/progress/{user_id}")
+async def user_progress(user_id: str):
+    return await get_user_progress(user_id)
+```
+
+---
+
+# 🚀 9. Main Application
+
+`app/main.py`
 
 ```python
 from fastapi import FastAPI
+from app.db.mongo import connect_to_mongo, close_mongo_connection
+from app.routes.exercise_routes import router as exercise_router
+from app.routes.progress_routes import router as progress_router
 
 app = FastAPI()
 
-@app.get("/")
-async def root():
-    return {"message": "TinyTap API running 🚀"}
+app.include_router(exercise_router)
+app.include_router(progress_router)
+
+@app.on_event("startup")
+async def startup_db():
+    await connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_db():
+    await close_mongo_connection()
 ```
 
-Ejecutar servidor:
+---
+
+# 🔎 Cómo Ver los Datos
+
+## Terminal
 
 ```bash
-uvicorn main:app --reload
+docker exec -it tinytap_mongo mongosh
+use tinytap
+show collections
+db.exercise_results.find().pretty()
 ```
 
-Abrir en navegador:
+## MongoDB Compass
+
+Connection:
 
 ```
-http://localhost:8000
+mongodb://localhost:27017
 ```
 
-Docs automáticas:
+## VS Code Mongo Extension
+
+Add connection:
 
 ```
-http://localhost:8000/docs
+mongodb://localhost:27017
 ```
-
-Motivo:
-
-FastAPI genera documentación automática y facilita probar endpoints sin frontend.
 
 ---
 
-# Estado actual
+# ✅ Estado Actual
 
-✔ Mongo funcionando en Docker
-✔ Conexión Python → Mongo
-✔ API FastAPI funcionando
-✔ Documentación Swagger disponible
+✔ Backend funcionando
+✔ Mongo async conectado
+✔ Guardar resultados
+✔ Calcular progreso con agregaciones
+✔ Swagger disponible
+
+El backend ya es funcional y preparado para frontend.
 
 ---
 
-# Próximos pasos
+# 🛣 Próximos Pasos (Orden Correcto)
 
-1. Conectar MongoDB dentro de FastAPI
-2. Crear modelos de datos
-3. Endpoint para guardar resultados de ejercicios
-4. Endpoint para obtener progreso del usuario
-5. Preparar API para frontend React
+1. Crear colección `exercises`
+2. Endpoint `GET /exercises`
+3. Endpoint `GET /session/next`
+4. Sistema de streaks
+5. Crear índices en Mongo
+6. Empezar frontend React
+
+---
+
+# 🔐 PROMPT DE CONTEXTO (Guardar esto)
+
+Si en el futuro necesito recuperar el estado del proyecto, usa este prompt:
+
+> Estamos desarrollando TinyTap, una mini app educativa tipo Duolingo para niños (~2 años).
+> Backend actual: FastAPI async + MongoDB Docker + Motor.
+> Ya tenemos endpoints:
+>
+> * POST /exercise/result
+> * GET /user/progress/{user_id}
+>   Con agregaciones Mongo funcionando.
+>   Arquitectura separada en routes/services/schemas/db.
+>   Próximo paso: crear colección exercises y sistema de entrega de ejercicios.
+
+---
+
+Proyecto en estado intermedio pero estructuralmente sólido.
