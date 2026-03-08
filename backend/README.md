@@ -386,27 +386,28 @@ mongodb://localhost:27017
 ```
 
 ---
+📊 Estado técnico del proyecto
 
-# ✅ Estado Actual
+Para ser un proyecto pequeño, tienes ya:
 
-✔ Backend funcionando
-✔ Mongo async conectado
-✔ Guardar resultados
-✔ Calcular progreso con agregaciones
-✔ Swagger disponible
+✔ arquitectura limpia
+✔ async API
+✔ dockerized database
+✔ services layer
+✔ modular routes
 
-El backend ya es funcional y preparado para frontend.
+Esto son buenas prácticas.
 
 ---
 
-# 🛣 Próximos Pasos (Orden Correcto)
+Roadmap actualizado
+Backend core
 
-1. Crear colección `exercises`
-2. Endpoint `GET /exercises`
-3. Endpoint `GET /session/next`
-4. Sistema de streaks
-5. Crear índices en Mongo
-6. Empezar frontend React
+✔ MongoDB
+✔ FastAPI
+✔ Docker
+✔ exercises API
+✔ session engine
 
 ---
 
