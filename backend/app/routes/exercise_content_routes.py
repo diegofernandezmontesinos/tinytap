@@ -6,4 +6,5 @@ router = APIRouter()
 
 @router.get("/exercises")
 async def list_exercises():
+
     return await get_all_exercises()

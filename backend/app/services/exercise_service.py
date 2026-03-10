@@ -1,10 +1,9 @@
 from datetime import datetime
-from app.db import mongo
-
+from app.repositories.exercise_result_repository import ExerciseResultRepository
 
 
 async def save_exercise_result(data):
-    
+
     xp = 10 if data.correct else 0
 
     document = {
@@ -16,8 +15,7 @@ async def save_exercise_result(data):
         "timestamp": datetime.utcnow()
     }
 
-    result = await mongo.db.exercise_results.insert_one(document)
-
+    result = await ExerciseResultRepository.insert_result(document)
 
     return {
         "status": "saved",

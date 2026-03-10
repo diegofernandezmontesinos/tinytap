@@ -1,10 +1,8 @@
-from app.db import mongo
+from app.repositories.exercise_repository import ExerciseRepository
+
 
 async def get_all_exercises():
-    cursor = mongo.db.exercises.find()
-    exercises = await cursor.to_list(length=100)
 
-    for ex in exercises:
-        ex["_id"] = str(ex["_id"])
+    exercises = await ExerciseRepository.get_all()
 
     return exercises

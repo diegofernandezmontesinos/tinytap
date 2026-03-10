@@ -61,6 +61,8 @@ Arquitectura basada en separación de responsabilidades:
 * db → conexión Mongo
 * core → configuración
 
+* routes → services → repositories → database
+
 ---
 
 # 🚀 1. Crear Proyecto
@@ -124,7 +126,7 @@ volumes:
   mongo_data:
 ```
 
-Levantar:
+Levantar el proyecto:
 
 ```bash
 docker compose up -d
@@ -132,6 +134,11 @@ docker ps
 ```
 
 Motivo: ejecutar Mongo sin instalarlo manualmente y con persistencia.
+
+en consola, desde backend/usar el comando 
+```bash
+uvicorn app.main:app --reload 
+```
 
 ---
 
